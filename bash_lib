@@ -1,0 +1,74 @@
+reload_brcm() {
+  if ! modprobe -r brcmfmac; then
+    return 1
+  fi
+  sleep 1
+  if ! modprobe brcmfmac; then
+    return 1
+  fi
+  sleep 2
+  iw dev wlan0 set power_save off
+  return 0
+}
+
+start_monitor_interface() {
+echo "1"
+  ifconfig wlan0 up
+echo "2"
+  sleep 3
+echo "3"
+  iw phy "$(iw phy | head -1 | cut -d" " -f2)" interface add wlan0mon type monitor
+echo "4"
+  sleep 2
+echo "5"
+  rfkill unblock all
+echo "6"
+  ifconfig wlan0 down
+echo "7"
+  ifconfig wlan0mon up
+echo "8"
+  iw dev wlan0mon set power_save off
+}
+
+stop_monitor_interface() {
+  ifconfig wlan0mon down && iw dev wlan0mon del
+  reload_brcm
+  ifconfig wlan0 up
+}
+
+is_interface_up() {
+  if grep -qi 'up' /sys/class/net/"$1"/operstate; then
+    return 0
+  fi
+  return 1
+}
+
+# returns 0 if conditions for AUTO mode are met
+is_auto_mode() {
+  # check override file first
+  if [ -f /root/.pwnagotchi-manual ]; then
+    # remove the override file if found
+    rm -rf /root/.pwnagotchi-manual
+    return 1
+  fi
+
+  # check override file first
+  if [ -f /root/.pwnagotchi-auto ]; then
+    # remove the override file if found
+    rm -rf /root/.pwnagotchi-auto
+    return 0
+  fi
+
+  # if usb0 is up, we're in MANU
+  if is_interface_up usb0; then
+    return 1
+  fi
+
+  # if eth0 is up (for other boards), we're in MANU
+  if is_interface_up eth0; then
+    return 0
+  fi
+
+  # no override, but none of the interfaces is up -> AUTO
+  return 0
+}
