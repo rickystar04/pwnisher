@@ -128,7 +128,7 @@ class Client(object):
     def start_module(self, module):
         self.run('%s on' % module)
 
-    def iface_channels(slef, ifname):
+    def iface_channels(self, ifname):
         channels = []
         phy = subprocess.getoutput("/sbin/iw %s info | grep wiphy | cut -d ' ' -f 2" % ifname)
         output = subprocess.getoutput(r"/sbin/iw phy%s channels | grep ' MHz' | grep -v disabled | sed 's/^.*\[//g' | sed s/\].*\$//g" % phy)
@@ -271,7 +271,7 @@ def start(args):
 
     
 
-
+    print("Client è di tipo:", type(Client))
    # client = Client(config)
     client= Client( config,
                         "127.0.0.1" if "hostname" not in config['bettercap'] else config['bettercap']['hostname'],
@@ -279,6 +279,8 @@ def start(args):
                         8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
                         "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
                         "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
+
+    
     
     client.session()
 
