@@ -131,7 +131,7 @@ class Client(object):
     def iface_channels(slef, ifname):
         channels = []
         phy = subprocess.getoutput("/sbin/iw %s info | grep wiphy | cut -d ' ' -f 2" % ifname)
-        output = subprocess.getoutput("/sbin/iw phy%s channels | grep ' MHz' | grep -v disabled | sed 's/^.*\[//g' | sed s/\].*\$//g" % phy)
+        output = subprocess.getoutput(r"/sbin/iw phy%s channels | grep ' MHz' | grep -v disabled | sed 's/^.*\[//g' | sed s/\].*\$//g" % phy)
         for line in output.split("\n"):
             line = line.strip()
             try:
@@ -280,17 +280,21 @@ def start(args):
 
     client.recon()
 
-
     while True:
         session = client.session("session/wifi")
 
-        # Trova AP con client associati
-        for ap in session.get("access_points", []):
-            bssid = ap["bssid"]
-            if ap["encryption"] == "WPA2" and ap["clients"]:
-                print(f"Attaccando {ap['ssid']} ({bssid})...")
-                client.run(f"wifi.deauth {bssid}")
-                print("QUI")
-                time.sleep(15)  # Attendi handshake
+        # Lista di Access Point
+        for ap in session.get('aps', []):
+            ssid = ap.get('ssid', '<hidden>')
+            bssid = ap.get('bssid')
+            rssi = ap.get('rssi')
+            clients = ap.get('clients', [])
+            print(f"[AP] SSID: {ssid}, BSSID: {bssid}, RSSI: {rssi}, Clients: {len(clients)}")
 
-        time.sleep(10)
+            # Lista di client associati
+            for client in clients:
+                mac = client.get('mac')
+                rssi = client.get('rssi')
+                print(f"    [Client] MAC: {mac}, RSSI: {rssi}")
+
+        time.sleep(5)
