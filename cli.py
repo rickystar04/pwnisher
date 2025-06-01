@@ -5,10 +5,10 @@ import os
 
 def cli():
     #Client.__init__(                        "127.0.0.1" if "hostname" not in config['bettercap'] else config['bettercap']['hostname'],
-     #                   "http" if "scheme" not in config['bettercap'] else config['bettercap']['scheme'],
-      #                  8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
-     #                   "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
-     #                   "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
+     #                  "http" if "scheme" not in config['bettercap'] else config['bettercap']['scheme'],
+     #                 8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
+      #                 "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
+     #                  "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Costruisci il path al file di configurazione

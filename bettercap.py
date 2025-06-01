@@ -272,7 +272,13 @@ def start(args):
     
 
 
-    client = Client(config)
+   # client = Client(config)
+    client= Client( config,
+                        "127.0.0.1" if "hostname" not in config['bettercap'] else config['bettercap']['hostname'],
+                        "http" if "scheme" not in config['bettercap'] else config['bettercap']['scheme'],
+                        8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
+                        "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
+                        "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
     
     client.session()
 
