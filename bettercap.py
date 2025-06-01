@@ -224,9 +224,46 @@ def start(args):
     logging.info("Loaded config: %s", config)
 
     hostname = config['bettercap'].get('hostname', '127.0.0.1')
-    client = Client(
-        config,
-        hostname=hostname
-    )
+    client= Client( config,
+                        "127.0.0.1" if "hostname" not in config['bettercap'] else config['bettercap']['hostname'],
+                        "http" if "scheme" not in config['bettercap'] else config['bettercap']['scheme'],
+                        8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
+                        "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
+                        "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
+
 
     logging.info("Client è di tipo: %s", type(client))
+
+    client.session()
+
+    logging.info("Client è di tipo: %s", type(client))
+
+
+    client.start_monitor_mode()
+
+    logging.info("Client è di tipo: %s", type(client))
+
+
+    client.recon()
+
+    logging.info("Client è di tipo: %s", type(client))
+
+
+    while True:
+        session = client.session("session/wifi")
+
+        # Lista di Access Point
+        for ap in session.get('aps', []):
+            ssid = ap.get('ssid', '<hidden>')
+            bssid = ap.get('bssid')
+            rssi = ap.get('rssi')
+            clients = ap.get('clients', [])
+            print(f"[AP] SSID: {ssid}, BSSID: {bssid}, RSSI: {rssi}, Clients: {len(clients)}")
+
+            # Lista di client associati
+            for client in clients:
+                mac = client.get('mac')
+                rssi = client.get('rssi')
+                print(f"    [Client] MAC: {mac}, RSSI: {rssi}")
+
+        time.sleep(5)
