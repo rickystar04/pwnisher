@@ -157,7 +157,7 @@ class Client(object):
         return self.config
 
     def _reset_wifi_settings(self):
-        cfg = client.get_config()
+        cfg = get_config()
         mon_iface = cfg['main']['iface']
         self.run('set wifi.interface %s' % mon_iface)
         self.run('set wifi.ap.ttl %d' % cfg['personality']['ap_ttl'])
@@ -188,7 +188,7 @@ class Client(object):
                     logging.info("waiting for monitor interface %s ...", mon_iface)
                     time.sleep(1)
 
-        cfg = client.get_config()
+        cfg = get_config()
         print(cfg)
         
         self._supported_channels = self.iface_channels(cfg['main']['iface'])
@@ -213,7 +213,7 @@ class Client(object):
         threading.Thread(target=self._event_poller, args=(asyncio.get_event_loop(),), name="Event Polling", daemon=True).start()
 
     def recon(self):
-        cfg = client.get_config()
+        cfg = get_config()
         print(cfg)
         recon_time = cfg['personality']['recon_time']
         max_inactive = cfg['personality']['max_inactive_scale']
