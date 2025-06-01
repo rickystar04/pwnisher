@@ -153,16 +153,17 @@ class Client(object):
     def restart_module(self, module):
         self.run('%s off; %s on' % (module, module))
     
-    def config(self):
+    def get_config(self):
         return self.config
 
     def _reset_wifi_settings(self):
-        mon_iface = self.config['main']['iface']
+        cfg = client.get_config()
+        mon_iface = cfg['main']['iface']
         self.run('set wifi.interface %s' % mon_iface)
-        self.run('set wifi.ap.ttl %d' % self.config['personality']['ap_ttl'])
-        self.run('set wifi.sta.ttl %d' % self.config['personality']['sta_ttl'])
-        self.run('set wifi.rssi.min %d' % self.config['personality']['min_rssi'])
-        self.run('set wifi.handshakes.file %s' % self.config['bettercap']['handshakes'])
+        self.run('set wifi.ap.ttl %d' % cfg['personality']['ap_ttl'])
+        self.run('set wifi.sta.ttl %d' % cfg['personality']['sta_ttl'])
+        self.run('set wifi.rssi.min %d' % cfg['personality']['min_rssi'])
+        self.run('set wifi.handshakes.file %s' % cfg['bettercap']['handshakes'])
         self.run('set wifi.handshakes.aggregate false')
 
     def start_monitor_mode(self):
@@ -187,10 +188,12 @@ class Client(object):
                     logging.info("waiting for monitor interface %s ...", mon_iface)
                     time.sleep(1)
 
-        print(self.config)
-        self._supported_channels = self.iface_channels(self.config['main']['iface'])
+        cfg = client.get_config()
+        print(cfg)
+        
+        self._supported_channels = self.iface_channels(cfg['main']['iface'])
         logging.info("supported channels: %s", self._supported_channels)
-        logging.info("handshakes will be collected inside %s", self.config['bettercap']['handshakes'])
+        logging.info("handshakes will be collected inside %s", cfg['bettercap']['handshakes'])
 
         self._reset_wifi_settings()
 
@@ -210,11 +213,12 @@ class Client(object):
         threading.Thread(target=self._event_poller, args=(asyncio.get_event_loop(),), name="Event Polling", daemon=True).start()
 
     def recon(self):
-        print(self.config)
-        recon_time = self.config['personality']['recon_time']
-        max_inactive = self.config['personality']['max_inactive_scale']
-        recon_mul = self.config['personality']['recon_inactive_multiplier']
-        channels = self.config['personality']['channels']
+        cfg = client.get_config()
+        print(cfg)
+        recon_time = cfg['personality']['recon_time']
+        max_inactive = cfg['personality']['max_inactive_scale']
+        recon_mul = cfg['personality']['recon_inactive_multiplier']
+        channels = cfg['personality']['channels']
 
  
 
