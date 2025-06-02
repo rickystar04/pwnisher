@@ -11,29 +11,34 @@ reload_brcm() {
   return 0
 }
 
-start_monitor_interface() {
+start_monitor_interface2() {
 echo "1"
-  ifconfig wlan0 up
+  ifconfig wlan1 up
 echo "2"
   sleep 3
 echo "3"
-  iw phy "$(iw phy | head -1 | cut -d" " -f2)" interface add wlan0mon type monitor
+  iw phy "$(iw phy | head -1 | cut -d" " -f2)" interface add wlan1mon type monitor
 echo "4"
   sleep 2
 echo "5"
   rfkill unblock all
 echo "6"
-  ifconfig wlan0 down
+  ifconfig wlan1 down
 echo "7"
-  ifconfig wlan0mon up
+  ifconfig wlan1mon up
 echo "8"
-  iw dev wlan0mon set power_save off
+  iw dev wlan1mon set power_save off
+}
+
+start_monitor_interface(){
+  echo "1"
+  airmon-ng start wlan1
 }
 
 stop_monitor_interface() {
-  ifconfig wlan0mon down && iw dev wlan0mon del
+  ifconfig wlan0mon down && iw dev wlan1mon del
   reload_brcm
-  ifconfig wlan0 up
+  ifconfig wlan1 up
 }
 
 is_interface_up() {

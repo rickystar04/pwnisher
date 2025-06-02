@@ -1,7 +1,13 @@
 [main]
 name = "pwnagotchi"
 lang = "en"
-iface = "wlan0mon"
+iface = "wlan1mon"
+whitelist = [
+    "EXAMPLE_NETWORK",
+    "ANOTHER_EXAMPLE_NETWORK",
+    "fo:od:ba:be:fo:od",
+    "fo:od:ba"
+]
 
 [personality]
 advertise = true

