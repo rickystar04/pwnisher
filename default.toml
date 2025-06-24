@@ -1,13 +1,20 @@
 [main]
 name = "pwnagotchi"
 lang = "en"
-iface = "wlan1mon"
+iface = "wlan1"
 whitelist = [
     "EXAMPLE_NETWORK",
     "ANOTHER_EXAMPLE_NETWORK",
     "fo:od:ba:be:fo:od",
     "fo:od:ba"
 ]
+
+[main.plugins.prova]
+enabled=true
+
+[main.plugins.auto-tune]
+enabled = true
+
 
 [personality]
 advertise = true
@@ -34,6 +41,7 @@ throttle_d = 0.9
 [bettercap]
 handshakes = "/home/riccardo/riccardo/pwnisher/"
 silence = [
+    "session.started",
     "ble.device.new",
     "ble.device.lost",
     "ble.device.service.discovered",

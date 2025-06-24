@@ -13,7 +13,6 @@ def cli():
 
     # Costruisci il path al file di configurazione
     default_config_path = os.path.join(base_dir, 'default.toml')
-    print("PROVA")
     parser = argparse.ArgumentParser(prog="pwnagotchi")
     parser.add_argument(
         '-C', '--config',
@@ -45,4 +44,6 @@ def cli():
 
     
 
-cli()
+
+if __name__ == "__main__":
+    cli()

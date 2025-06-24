@@ -8,14 +8,22 @@ import threading
 import subprocess
 import requests
 import websockets
+import glob
+
 
 from time import sleep
 from requests.auth import HTTPBasicAuth
+
+import plugins
+
 
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
+
+
+logging.getLogger("requests").setLevel(logging.WARNING)
 
 requests.adapters.DEFAULT_RETRIES = 5
 
@@ -25,6 +33,9 @@ max_queue = 10000
 
 min_sleep = 0.5
 max_sleep = 5.0
+
+RECOVERY_DATA_FILE = '/root/.pwnagotchi-recovery'
+
 
 def decode(r, verbose_errors=True):
     try:
@@ -54,6 +65,14 @@ class Client:
 
         self._history = {}
         self._handshakes={}
+        self._last_pwnd = None
+        self.ping_interval = 20
+        self.ping_timeout = 10
+        self.max_queue = None
+        self.min_sleep = 2
+        self.max_sleep = 10
+
+
 
  
 
@@ -62,15 +81,18 @@ class Client:
         return decode(r)
 
     async def start_websocket(self, consumer):
+        print("QUIIIIIIIIIIIIIIIII")
+        exit()
         s = f"{self.websocket}/events"
         while True:
+            logging.error("QUIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII")
             logging.info("[bettercap] creating new websocket...")
             try:
                 async with websockets.connect(
                     s,
-                    ping_interval=ping_interval,
-                    ping_timeout=ping_timeout,
-                    max_queue=max_queue
+                    ping_interval=self.ping_interval,
+                    ping_timeout=self.ping_timeout,
+                    max_queue=self.max_queue
                 ) as ws:
                     while True:
                         try:
@@ -112,9 +134,7 @@ class Client:
 
         for tag in self.config['bettercap']['silence']:
             try:
-                print("QUI")
                 print(self.config)
-                sleep(10)
                 self.run('events.ignore %s' % tag, verbose_errors=False)
             except Exception:
                 pass
@@ -185,7 +205,7 @@ class Client:
         logging.info("supported channels: %s", self._supported_channels)
         logging.info("handshakes will be collected inside %s", cfg['bettercap']['handshakes'])
 
-        self._reset_wifi_settings()
+        self._reset_wifi_settings() 
 
         if self.is_module_running('wifi'):
             logging.debug("restarting wifi module ...")
@@ -194,6 +214,26 @@ class Client:
         else:
             logging.debug("starting wifi module ...")
             self.start_module('wifi.recon')
+
+    def total_unique_handshakes(self, path):
+        expr = os.path.join(path, "*.pcap")
+        return len(glob.glob(expr))
+
+    def _update_handshakes(self, new_shakes=0):
+        if new_shakes > 0:
+            self._epoch.track(handshake=True, inc=new_shakes)
+
+        cfg=self.get_config()
+        tot = self.total_unique_handshakes(cfg['bettercap']['handshakes'])
+        txt = '%d (%d)' % (len(self._handshakes), tot)
+
+        if self._last_pwnd is not None:
+            txt += ' [%s]' % self._last_pwnd
+
+        #self._view.set('shakes', txt)
+
+        #if new_shakes > 0:
+        #    self._view.on_handshakes(new_shakes)
     
     async def _on_event(self, msg):
         found_handshake = False
@@ -230,6 +270,23 @@ class Client:
             self._update_handshakes(1 if found_handshake else 0)
 
 
+    def _load_recovery_data(self, delete=True, no_exceptions=True):
+        try:
+            with open(RECOVERY_DATA_FILE, 'rt') as fp:
+                data = json.load(fp)
+                logging.info("found recovery data: %s", data)
+                self._started_at = data['started_at']
+                self._epoch.epoch = data['epoch']
+                self._handshakes = data['handshakes']
+                self._history = data['history']
+                self._last_pwnd = data['last_pwnd']
+
+                if delete:
+                    logging.info("deleting %s", RECOVERY_DATA_FILE)
+                    os.unlink(RECOVERY_DATA_FILE)
+        except:
+            if not no_exceptions:
+                raise
     def _event_poller(self, loop):
         self._load_recovery_data()
         self.run('events.clear')
@@ -237,7 +294,7 @@ class Client:
         while True:
             logging.debug("[agent:_event_poller] polling events ...")
             try:
-                loop.create_task(start_websocket(self._on_event))
+                loop.create_task(self.start_websocket(self._on_event))
                 loop.run_forever()
                 logging.debug("[agent:_event_poller] loop loop loop")
             except Exception as ex:
@@ -391,6 +448,44 @@ class Client:
                 time.sleep(throttle)
             #self._view.on_normal()
 
+    def start_session_fetcher(self):
+        #_thread.start_new_thread(self._fetch_stats, ())
+        threading.Thread(target=self._fetch_stats, args=(), name="Session Fetcher", daemon=True).start()
+
+    def _fetch_stats(self):
+        while True:
+            try:
+                s = self.session()
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.session: %s" % repr(err))
+            
+            """
+            try:
+                self._update_uptime(s)
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.update_uptimes: %s" % repr(err))
+
+            try:
+                self._update_advertisement(s)
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.update_advertisements: %s" % repr(err))
+
+            try:
+                self._update_peers()
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.update_peers: %s" % repr(err))
+            try:
+                self._update_counters()
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.update_counters: %s" % repr(err))
+            """
+            try:
+                self._update_handshakes(0)
+            except Exception as err:
+                logging.error("[agent:_fetch_stats] self.update_handshakes: %s" % repr(err))
+
+            time.sleep(5)
+
     def deauth(self, ap, sta, throttle=-1):
         #if self.is_stale():
         #    logging.debug("recon is stale, skipping deauth(%s)", sta['mac'])
@@ -444,25 +539,39 @@ def start(args):
     config = load_toml_file(args.config)
     logging.info("Loaded config: %s", config)
 
+    print(plugins.__file__)
+    plugins.load(config)
+
+   
+
     hostname = config['bettercap'].get('hostname', '127.0.0.1')
     client= Client( config,
                         "127.0.0.1" if "hostname" not in config['bettercap'] else config['bettercap']['hostname'],
                         "http" if "scheme" not in config['bettercap'] else config['bettercap']['scheme'],
                         8081 if "port" not in config['bettercap'] else config['bettercap']['port'],
-                        "pwnagotchi" if "username" not in config['bettercap'] else config['bettercap']['username'],
-                        "pwnagotchi" if "password" not in config['bettercap'] else config['bettercap']['password'])
+                        "user" if "username" not in config['bettercap'] else config['bettercap']['username'],
+                        "pass" if "password" not in config['bettercap'] else config['bettercap']['password']
+    )
 
     client.setup_events()
     logging.info("Client è di tipo: %s", type(client))
     #client.run("set events.stream false")
     #client.run("set events.logger false")
 
+
+    
+
     client.session()
 
   
     client.start_monitor_mode()
 
+    client.start_event_polling()
+    client.start_session_fetcher()
+
     logging.info("Client è di tipo: %s", type(client))
+
+
 
     """
     while True:
@@ -485,6 +594,7 @@ def start(args):
         time.sleep(5)
     """
 
+    
     while True:
             try:
                 # recon on all channels
@@ -530,3 +640,4 @@ def start(args):
                     #agent.next_epoch()
                 else:
                     logging.exception("main loop exception (%s)", e)
+    
