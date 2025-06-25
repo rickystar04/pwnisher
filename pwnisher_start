@@ -2,9 +2,13 @@
 # -*- coding: utf-8 -*-
 import re
 import sys
+import os
+
+# Aggiunge la root del progetto ai moduli Python
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 from cli import *
+
 if __name__ == '__main__':
     sys.argv[0] = re.sub(r'(-script\.pyw|\.exe)?$', '', sys.argv[0])
     sys.exit(cli())
-
-

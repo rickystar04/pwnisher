@@ -2,10 +2,15 @@ import logging
 import random
 import time
 import html
+import json
 
 import plugins 
 from flask import abort
 from flask import render_template_string
+
+from ui.web.handler import clients
+
+import asyncio
 
 
 class auto_tune(plugins.Plugin):
@@ -386,22 +391,28 @@ class auto_tune(plugins.Plugin):
 
     # called when the agent refreshed its access points list
     def on_wifi_update(self, agent, access_points):
-        # check aps and update active channels
+        #print("PROVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
         try:
             active_channels = []
             self._histogram["loops"] = self._histogram["loops"] + 1
             for ap in access_points:
+                logging.info("Processing AP: %s %s" % (ap['hostname'], ap['mac']))
                 self.markAPSeen(ap, 'wifi_update')
                 ch = ap['channel']
-                logging.debug("%s %d" % (ap['hostname'], ch))
                 if ch not in active_channels:
                     active_channels.append(ch)
                     if ch in self._unscanned_channels:
                         self._unscanned_channels.remove(ch)
-                self._histogram[ch] = 1 if ch not in self._histogram else self._histogram[ch] + 1
+                self._histogram[ch] = self._histogram.get(ch, 0) + 1
 
             self._active_channels = active_channels
-            logging.info("Histo: %s" % repr(self._histogram))
+
+            
+            ap_list = list(self._known_aps.values())
+            msg = json.dumps({"aps": ap_list})
+
+            print("Message to send: %s" % msg)
+
         except Exception as e:
             logging.exception(e)
 
@@ -463,6 +474,7 @@ class auto_tune(plugins.Plugin):
                 self.incrementChisto('Current APs', channel)
 
                 logging.info("New AP%s: %s" % (contextlabel, apID))
+
             else:
                 # seen before, merge info
                 for p in access_point:
@@ -496,6 +508,7 @@ class auto_tune(plugins.Plugin):
 
     # called when the agent is deauthenticating a client station from an AP
     def on_deauthentication(self, agent, access_point, client_station):
+        print("ON DEAUTHENTICATION")
         try:
             self.incrementChisto('Deauths', access_point['channel'])
             self.markAPSeen(access_point, "deauth")

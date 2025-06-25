@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Avvia Bettercap in background e salva il suo PID
-sudo bettercap -eval "api.rest.username user; api.rest.password pass; api.rest on" > /tmp/bettercap.log 2>&1 &
+sudo bettercap -eval "api.rest.username user; api.rest.password pass; set api.rest.websocket true; api.rest on; " > /tmp/bettercap.log 2>&1 &
 BETTERCAP_PID=$!
 
 # Funzione per terminare Bettercap quando lo script viene interrotto

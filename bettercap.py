@@ -9,7 +9,9 @@ import subprocess
 import requests
 import websockets
 import glob
+import threading
 
+import pwnisher
 
 from time import sleep
 from requests.auth import HTTPBasicAuth
@@ -17,8 +19,11 @@ from requests.auth import HTTPBasicAuth
 import plugins
 
 
+
+
+
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
 
@@ -52,8 +57,7 @@ def decode(r, verbose_errors=True):
 
 
 class Client:
-    def __init__(self, config, hostname='localhost', scheme='http', port=8081, username='user', password='pass'):
-        self.config = config
+    def __init__(self, hostname='localhost', scheme='http', port=8081, username='user', password='pass'):
         self.hostname = hostname
         self.scheme = scheme
         self.port = port
@@ -72,21 +76,31 @@ class Client:
         self.min_sleep = 2
         self.max_sleep = 10
 
+        self.aps={}
+
 
 
  
+    #FUNZIONAVA PRIMA
+    def sessions(self, sess="session"):
 
-    def session(self, sess="session"):
         r = requests.get(f"{self.url}/{sess}", auth=self.auth)
+        return decode(r)
+    
+    #FUNZIONA IN PWNAGOTCHI
+    def session(self, sess="session"):
+        print("URL:",self.url)
+        r = requests.get("%s/%s" % (self.url, sess), auth=self.auth)
         return decode(r)
 
     async def start_websocket(self, consumer):
         print("QUIIIIIIIIIIIIIIIII")
-        exit()
+
         s = f"{self.websocket}/events"
         while True:
             logging.error("QUIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII")
             logging.info("[bettercap] creating new websocket...")
+            logging.info("[bettercap] connecting to %s", s)
             try:
                 async with websockets.connect(
                     s,
@@ -112,10 +126,15 @@ class Client:
                                 logging.warning('[bettercap] ping error - retrying in %.1f sec', sleep_time)
                                 await asyncio.sleep(sleep_time)
                                 break
-            except (ConnectionRefusedError, OSError):
-                sleep_time = min_sleep + max_sleep * random.random()
-                logging.warning('[bettercap] retrying websocket connection in %.1f sec', sleep_time)
+            except ConnectionRefusedError:
+                sleep_time = min_sleep + max_sleep*random.random()
+                logging.warning('[bettercap] nobody seems to be listening at the bettercap endpoint...')
+                logging.warning('[bettercap] retrying connection in {} sec'.format(sleep_time))
                 await asyncio.sleep(sleep_time)
+                continue
+            except OSError:
+                logging.warning('connection to the bettercap endpoint failed...')
+                pwnagotchi.restart("AUTO")
 
     def run(self, command, verbose_errors=True):
         while True:
@@ -128,6 +147,8 @@ class Client:
             else:
                 break
         return decode(r, verbose_errors=verbose_errors)
+    
+
 
     def setup_events(self):
         logging.info("connecting to %s ...", self.url)
@@ -238,6 +259,7 @@ class Client:
     async def _on_event(self, msg):
         found_handshake = False
         jmsg = json.loads(msg)
+        logging.info("received event: %s" % jmsg)
 
         # give plugins access to the events
         try:
@@ -265,7 +287,7 @@ class Client:
                     logging.warning(
                         "!!! captured new handshake on channel %d, %d dBm: %s (%s) -> %s [%s (%s)] !!!",
                         ap['channel'], ap['rssi'], sta['mac'], sta['vendor'], ap['hostname'], ap['mac'], ap['vendor'])
-                    #plugins.on('handshake', self, filename, ap, sta)
+                    plugins.on('handshake', self, filename, ap, sta)
                 found_handshake = True
             self._update_handshakes(1 if found_handshake else 0)
 
@@ -344,7 +366,7 @@ class Client:
 
     def set_access_points(self, aps):
         self._access_points = aps
-        #plugins.on('wifi_update', self, aps)
+        plugins.on('wifi_update', self, aps)
         #self._epoch.observe(aps, list(self._peers.values()))
         return self._access_points
 
@@ -354,7 +376,7 @@ class Client:
         aps = []
         try:
             s = self.session()
-            #plugins.on("unfiltered_ap_list", self, s['wifi']['aps'])
+            plugins.on("unfiltered_ap_list", self, s['wifi']['aps'])
             for ap in s['wifi']['aps']:
                 if ap['encryption'] == '' or ap['encryption'] == 'OPEN':
                     continue
@@ -370,12 +392,13 @@ class Client:
 
     def get_access_points_by_channel(self):
         aps = self.get_access_points()
-        logging.info(aps)
         channels = self.config['personality']['channels']
         grouped = {}
 
         # group by channel
         for ap in aps:
+            logging.info("AP: %s (%s) on channel %d", ap['hostname'], ap['mac'], ap['channel'])
+            self.aps[ap['mac']] = ap
             ch = ap['channel']
             # if we're sticking to a channel, skip anything
             # which is not on that channel
@@ -420,7 +443,7 @@ class Client:
                     #self._epoch.track(hop=True)
                     #self._view.set('channel', '%d' % channel)
 
-                    #plugins.on('channel_hop', self, channel)
+                    plugins.on('channel_hop', self, channel)
 
                 except Exception as e:
                     logging.error("Error while setting channel (%s)", e)
@@ -443,7 +466,7 @@ class Client:
             except Exception as e:
                 self._on_error(ap['mac'], e)
 
-            #plugins.on('association', self, ap)
+            plugins.on('association', self, ap)
             if throttle > 0:
                 time.sleep(throttle)
             #self._view.on_normal()
@@ -506,12 +529,13 @@ class Client:
             except Exception as e:
                 self._on_error(sta['mac'], e)
 
-            #plugins.on('deauthentication', self, ap, sta)
+            plugins.on('deauthentication', self, ap, sta)
             if throttle > 0:
                 time.sleep(throttle)
             #self._view.on_normal()
 
-
+    def view_aps(self):
+        return self.aps
 
 def load_toml_file(filename):
     with open(filename) as fp:
@@ -532,11 +556,26 @@ def load_toml_file(filename):
             print("Unable to convert to new format:", e)
         return data
 
+def try_view_ap(Client):
+    aps = Client.view_aps()
+    if not aps:
+        print("No access points found.")
+        return
+
+    for ap in aps.values():
+        print(f"AP: {ap['hostname']} ({ap['mac']}) on channel {ap['channel']}, RSSI: {ap['rssi']} dBm")
+        for client in ap['clients']:
+            print(f"  Client: {client['mac']} ({client['vendor']}), RSSI: {client['rssi']} dBm")
+
+
 
 
 
 def start(args):
     config = load_toml_file(args.config)
+
+    pwnisher.config=config
+
     logging.info("Loaded config: %s", config)
 
     print(plugins.__file__)
@@ -570,6 +609,8 @@ def start(args):
     client.start_session_fetcher()
 
     logging.info("Client è di tipo: %s", type(client))
+
+
 
 
 

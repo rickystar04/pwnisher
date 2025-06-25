@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Reti WiFi Live</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 1rem;
+        background-color: #fafafa;
+      }
+      li {
+        margin: 6px 0;
+        padding: 8px;
+        background: #f0f0f0;
+        border-radius: 6px;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Reti WiFi trovate:</h1>
+    <ul id="networks"></ul>
+
+    <script>
+      const ul = document.getElementById("networks");
+
+      async function fetchAccessPoints() {
+        try {
+          const response = await fetch("/api/access_points");
+          const data = await response.json();
+          ul.innerHTML = ""; // svuota lista
+
+          data.aps.forEach((ap) => {
+            const li = document.createElement("li");
+            li.textContent = `SSID: ${ap.ssid}, BSSID: ${ap.bssid}, Channel: ${ap.channel}, Clients: ${ap.clients}`;
+            ul.appendChild(li);
+          });
+        } catch (e) {
+          console.error("Errore nel fetch", e);
+        }
+      }
+
+      // Primo caricamento
+      fetchAccessPoints();
+      // Aggiorna ogni 5 secondi
+      setInterval(fetchAccessPoints, 5000);
+    </script>
+  </body>
+</html>
