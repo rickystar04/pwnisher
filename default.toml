@@ -8,6 +8,10 @@ whitelist = [
     "fo:od:ba:be:fo:od",
     "fo:od:ba"
 ]
+mon_max_blind_epochs = 5
+no_restart = false
+
+
 
 [main.plugins.prova]
 enabled=true
@@ -39,7 +43,7 @@ throttle_a = 0.4
 throttle_d = 0.9
 
 [bettercap]
-handshakes = "/home/riccardo/riccardo/pwnisher/"
+handshakes = "/home/riccardo/riccardo/pwnisher/handshakes"
 silence = [
     "session.started",
     "ble.device.new",
@@ -56,3 +60,14 @@ silence = [
     "wifi.ap.lost",
     "mod.started"
 ]
+
+
+[ui.web]
+enabled = true
+address = "::" # listening on both ipv4 and ipv6 - switch to 0.0.0.0 to listen on just ipv4
+auth = false
+username = "changeme" # if auth is true
+password = "changeme" # if auth is true
+origin = ""
+port = 8080
+on_frame = ""

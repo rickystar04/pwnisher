@@ -13,6 +13,8 @@ database = {}
 locks = {}
 plugin_event_queues = {}
 exitFlag = 0
+loaded = {}
+
 
 
 

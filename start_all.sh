@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Avvia Bettercap in background e salva il suo PID
-sudo bettercap -eval "api.rest.username user; api.rest.password pass; set api.rest.websocket true; api.rest on; " > /tmp/bettercap.log 2>&1 &
+sudo bettercap -eval "api.rest.username user; api.rest.password pass; set api.rest.websocket true; api.rest on;" > /tmp/bettercap.log 2>&1 &
 BETTERCAP_PID=$!
 
 # Funzione per terminare Bettercap quando lo script viene interrotto
@@ -16,7 +16,7 @@ trap cleanup SIGINT SIGTERM
 
 # Attendi che l'API sia disponibile
 timeout=10
-while ! nc -z 127.0.0.1 8081 && [ $timeout -gt 0 ]; do
+while ! curl -s http://127.0.0.1:8081/api/session > /dev/null && [ $timeout -gt 0 ]; do
     sleep 1
     timeout=$((timeout - 1))
 done

@@ -4,13 +4,13 @@ import time
 import html
 import json
 
-import plugins 
+import pwnisher.plugins as plugins
 from flask import abort
 from flask import render_template_string
 
-from ui.web.handler import clients
 
 import asyncio
+import pwnisher
 
 
 class auto_tune(plugins.Plugin):
@@ -390,31 +390,28 @@ class auto_tune(plugins.Plugin):
             self._agent.run("wifi.clear")
 
     # called when the agent refreshed its access points list
+    import time
+
     def on_wifi_update(self, agent, access_points):
-        #print("PROVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        # check aps and update active channels
         try:
             active_channels = []
             self._histogram["loops"] = self._histogram["loops"] + 1
             for ap in access_points:
-                logging.info("Processing AP: %s %s" % (ap['hostname'], ap['mac']))
                 self.markAPSeen(ap, 'wifi_update')
                 ch = ap['channel']
+                logging.debug("%s %d" % (ap['hostname'], ch))
                 if ch not in active_channels:
                     active_channels.append(ch)
                     if ch in self._unscanned_channels:
                         self._unscanned_channels.remove(ch)
-                self._histogram[ch] = self._histogram.get(ch, 0) + 1
+                self._histogram[ch] = 1 if ch not in self._histogram else self._histogram[ch] + 1
 
             self._active_channels = active_channels
-
-            
-            ap_list = list(self._known_aps.values())
-            msg = json.dumps({"aps": ap_list})
-
-            print("Message to send: %s" % msg)
-
+            logging.info("Histo: %s" % repr(self._histogram))
         except Exception as e:
             logging.exception(e)
+
 
     # called when the agent refreshed an unfiltered access point list
     # this list contains all access points that were detected BEFORE filtering
@@ -474,7 +471,6 @@ class auto_tune(plugins.Plugin):
                 self.incrementChisto('Current APs', channel)
 
                 logging.info("New AP%s: %s" % (contextlabel, apID))
-
             else:
                 # seen before, merge info
                 for p in access_point:
@@ -496,6 +492,7 @@ class auto_tune(plugins.Plugin):
         except Exception as e:
             logging.exception(e)
             return False
+
 
     # called when the agent is sending an association frame
     def on_association(self, agent, access_point):
@@ -581,3 +578,29 @@ class auto_tune(plugins.Plugin):
             cl = event['data']['Client']
         except Exception as e:
             logging.exception(repr(e))
+
+class APManager:
+    def __init__(self):
+        # Dizionario con chiave univoca (es. MAC) e valore i dati AP
+        self._known_aps = {}
+
+    def update_access_points(self, access_points):
+        current_ids = set()
+        for ap in access_points:
+            ap_id = ap['mac']  # usa mac come ID univoco
+            current_ids.add(ap_id)
+
+            if ap_id not in self._known_aps:
+                # Nuovo AP, aggiungilo
+                self._known_aps[ap_id] = ap.copy()
+            else:
+                # AP già presente, aggiorna dati (merge o sovrascrivi)
+                self._known_aps[ap_id].update(ap)
+
+        # Rimuovi AP che non sono più rilevati
+        for ap_id in list(self._known_aps.keys()):
+            if ap_id not in current_ids:
+                del self._known_aps[ap_id]
+
+    def get_access_points(self):
+        return list(self._known_aps.values())

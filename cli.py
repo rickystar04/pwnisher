@@ -5,6 +5,7 @@ import time
 import tomlkit
 import os
 import logging
+import pwnisher.plugins as plugins
 
 
 def load_toml_file(filename):
@@ -44,7 +45,7 @@ def cli():
                 # for each channel
                 for ch, aps in channels:
                     time.sleep(1)
-                    client.set_channel(ch)
+                    agent.set_channel(ch)
 
                     #if not agent.is_stale() and agent.any_activity():
                     logging.info("%d access points on channel %d" % (len(aps), ch))
@@ -65,7 +66,7 @@ def cli():
                 # its relative time will take ... basically, in Pwnagotchi's universe,
                 # Wi-Fi electromagnetic fields affect time like gravitational fields
                 # affect ours ... neat ^_^
-                #agent.next_epoch()
+                agent.next_epoch()
 
                 #if grid.is_connected():
                  #   plugins.on('internet_available', agent)
@@ -75,7 +76,7 @@ def cli():
                     logging.exception("main loop exception due to unavailable wifi device, likely programmatically disabled (%s)", e)
                     logging.info("sleeping 60 seconds then advancing to next epoch to allow for cleanup code to trigger")
                     time.sleep(60)
-                    #agent.next_epoch()
+                    agent.next_epoch()
                 else:
                     logging.exception("main loop exception (%s)", e)
         # Implementa la logica per la modalità automatica qui
@@ -115,6 +116,8 @@ def cli():
         print("Altro argument")
 
     config = load_toml_file(args.config)
+
+    plugins.load(config)
 
     
     agent=Agent(config=config)

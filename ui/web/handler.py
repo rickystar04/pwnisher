@@ -1,46 +1,30 @@
-# main.py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from threading import Thread
-import time
+# ui/web/handler.py
 
-# Importa la tua classe Client
-from bettercap import Client
-from config import load_config  # ipotetico file config
+import pwnisher
+def Handler(config, agent, app):
+    from fastapi import APIRouter
+    from fastapi.responses import JSONResponse
 
-# Variabile globale condivisa
-captured_aps = []
+    router = APIRouter()
 
-app = FastAPI()
+    @router.get("/api/wifi")
+    async def get_wifi():
+        print("PROVA")
+        try:
+            print("QUI1")
+            aps = [
+                        ap for ap in pwnisher.known_aps.values()
+                        if ap.get("AT_visible", False)
+                    ]
+            return {"aps": aps}
+        except Exception as e:
+            return JSONResponse(content={"error": str(e)}, status_code=500)
+        
+    
+    @router.get("/api/access_points")
+    async def get_access_points():
+        # Prendi la lista attuale degli AP dall’agent
+        aps = agent.get_access_points()
+        return JSONResponse(content=aps)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/api/wifi")
-def get_wifi():
-    return {"aps": captured_aps}
-
-
-# Funzione che fa girare il tuo Client
-def start_capture():
-    config = load_config()
-    client = Client(config)
-
-    while True:
-        # qui aggiorni la lista condivisa
-        new_aps = client.get_access_points()  # tua funzione
-        if new_aps:
-            captured_aps.clear()
-            captured_aps.extend(new_aps)
-        time.sleep(5)
-
-# Avvia il thread all'avvio
-@app.on_event("startup")
-def startup_event():
-    t = Thread(target=start_capture, daemon=True)
-    t.start()
+    app.include_router(router)

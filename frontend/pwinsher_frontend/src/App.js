@@ -7,7 +7,8 @@ function App() {
   useEffect(() => {
     const fetchAccessPoints = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/wifi");
+        //const response = await fetch("http://localhost:8080/api/wifi");
+        const response = await fetch("http://localhost:8080/api/access_points");
         const data = await response.json();
         console.log("Dati ricevuti:", data);
         setAps(data);
@@ -28,9 +29,8 @@ function App() {
       <div>Reti WIFI trovate:</div>
       <ul>
         {aps.map((ap, index) => (
-          <li key={ap.bssid || index}>
-            SSID: {ap.ssid}, BSSID: {ap.bssid}, Channel: {ap.channel}, Clients:{" "}
-            {ap.clients}
+          <li key={ap.mac || index}>
+            Hostname: {ap.hostname}, MAC: {ap.mac}, IP: {ap.ipv4}
           </li>
         ))}
       </ul>
